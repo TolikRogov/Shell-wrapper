@@ -1,0 +1,5 @@
+/home/anatoliy/Documents/vscode/Shell-wrapper/build/Debug/CMakeFiles/Shell-wrapper.dir
+/home/anatoliy/Documents/vscode/Shell-wrapper/build/Debug/CMakeFiles/edit_cache.dir
+/home/anatoliy/Documents/vscode/Shell-wrapper/build/Debug/CMakeFiles/rebuild_cache.dir
+/home/anatoliy/Documents/vscode/Shell-wrapper/build/Debug/source/CMakeFiles/edit_cache.dir
+/home/anatoliy/Documents/vscode/Shell-wrapper/build/Debug/source/CMakeFiles/rebuild_cache.dir
