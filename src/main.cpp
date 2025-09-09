@@ -13,7 +13,7 @@
 #define ESC_BRIGHT_YELLOW 	"\\033[93m"
 #define ESC_RESET 			"\\033[0m"
 
-char **parse_cmd(const char* cmd);
+char **parse_cmd(const char *cmd);
 static void run_cmd(const char *cmd);
 int strwords(const char *string);
 
@@ -35,11 +35,12 @@ int main() {
 	const char *p = string;
 	while (isspace((*p))) p++;
 	for (; *p != '\0'; p++) {
+		if (words_count > 0 && *p == '|')
+			break;
 		if (isspace(*p)) {
 			words_count++;
-			p++;
+			while (isspace((*(p + 1)))) p++;
 		}
-		while (isspace((*p))) p++;
 	}
 	return words_count;
  }
@@ -58,13 +59,16 @@ int main() {
 	char cmd_copy[ARG_MAX] = {};
 	char delim[] = " \t\n";
 	strcpy(cmd_copy, cmd);
-	for (char *p = strtok(cmd_copy,delim); p != NULL; p = strtok(NULL, delim))
+	for (char *p = strtok(cmd_copy,delim); arg_index < words_amount; p = strtok(NULL, delim))
 		args[arg_index++] = p;
 
 	return args;
  }
 
  static void run_cmd(const char *cmd) {
+	if (!cmd)
+		return;
+
 	const pid_t pid = fork();
 	char **args = NULL;
 
@@ -81,6 +85,9 @@ int main() {
 			args = NULL;
 		}
 		printf("Child process exit code: %d\n", WEXITSTATUS(status));
+		const char *new_cmd = strchr(cmd, '|');
+		if (new_cmd)
+			run_cmd(new_cmd + 1);
 		return;
 	}
 
