@@ -4,7 +4,12 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <string.h>
-#include <ctype.h>
+
+#ifdef __APPLE__
+	#include <_ctype.h>
+#else
+	#include <ctype.h>
+#endif
 
 #define ARG_MAX 2097152
 
@@ -20,10 +25,10 @@ int strwords(const char *string);
 int main() {
 	while (true) {
 		char cmd[ARG_MAX] = {};
-		system("echo -n \"" ESC_BOLD ESC_BRIGHT_RED
+		system("echo \"" ESC_BOLD ESC_BRIGHT_RED
 			   "$USER@$HOSTNAME" ESC_RESET ":"
 			   ESC_BOLD ESC_BRIGHT_YELLOW "$PWD"
-			   ESC_RESET "$ \"");
+			   ESC_RESET "$ \\c\"");
 		read(STDIN_FILENO, cmd, sizeof(cmd));
 		run_cmd(cmd);
 	}
@@ -49,8 +54,8 @@ int main() {
 	char **args = NULL;
 
 	size_t words_amount = (size_t)strwords(cmd);
-	args = (char**)calloc(words_amount, sizeof(char*));
-	if (!args) {
+	args = (char**)calloc(words_amount + 1, sizeof(char*));
+	if (!words_amount || !args) {
 		printf("memory allocation failed!\n");
 		return NULL;
 	}
@@ -92,7 +97,7 @@ int main() {
 	}
 
 	args = parse_cmd(cmd);
-	execvp(args[0], args);
+	if (args) execvp(args[0], args);
 	printf("exec* failed\n");
 	return;
 }
