@@ -4,34 +4,14 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <string.h>
-
-#ifdef __APPLE__
-	#include <_ctype.h>
-#else
-	#include <ctype.h>
-#endif
-
-#define ARG_MAX 2097152
-
-#define ESC_BOLD 			"\\033[1m"
-#define ESC_BRIGHT_RED 		"\\033[91m"
-#define ESC_BRIGHT_YELLOW 	"\\033[93m"
-#define ESC_RESET 			"\\033[0m"
-
-char **parse_cmd(const char *cmd);
-static void run_cmd(const char *cmd);
-int strwords(const char *string);
+#include <ShellWrapper.hpp>
 
 int main() {
 
 	while (true) {
+		system(PROMPT_STRING);
+
 		char cmd[ARG_MAX] = {};
-
-		system("echo \"" ESC_BOLD ESC_BRIGHT_RED
-			   "$USER@$HOSTNAME" ESC_RESET ":"
-			   ESC_BOLD ESC_BRIGHT_YELLOW "$PWD"
-			   ESC_RESET "$ \\c\"");
-
 		read(STDIN_FILENO, cmd, sizeof(cmd));
 		run_cmd(cmd);
 	}
@@ -39,27 +19,45 @@ int main() {
 	return 0;
  }
 
- int strwords(const char *string) {
+static void run_cmd(const char *cmd) {
 
-	int words_count = 0;
-	const char *p = string;
+	if (!cmd)
+		return;
 
-	while (isspace((*p))) p++;
+	static int pipefd[2] = {};
+	static int fd_in = 0;
+	if (pipe(pipefd) == -1) {
+        perror("pipe failed");
+        return;
+    }
 
-	for (; *p != '\0'; p++) {
-		if (words_count > 0 && *p == '|') {
-			if (isalpha(*(p - 1))) words_count++;
-			break;
-		}
+	static int conv_cnt = -1;
+	const char *new_cmd = strchr(cmd, '|');
+	if (new_cmd || conv_cnt > -1)
+		conv_cnt++;
 
-		if (isspace(*p)) {
-			words_count++;
-			while (isspace((*(p + 1)))) p++;
-		}
+	const pid_t pid = fork();
+	char **args = NULL;
+
+	Child child = {.args = args, .cmd = cmd, .conv_cnt = conv_cnt,
+				   .fd_in = fd_in, .new_cmd = new_cmd, .pipefd = pipefd};
+
+	Parent pnt = {.pid = pid, .pipefd = pipefd, .conv_cnt = &conv_cnt,
+				  .fd_in = &fd_in, .args = args, .new_cmd = new_cmd};
+
+	if (pid < 0) {
+		printf("fork failed!\n");
+		return;
 	}
 
-	return words_count;
- }
+	if (pid) {
+		parent_run(&pnt);
+		return;
+	}
+
+	child_run(&child);
+	return;
+}
 
  char **parse_cmd(const char* cmd) {
 
@@ -84,68 +82,65 @@ int main() {
 	return args;
  }
 
- static void run_cmd(const char *cmd) {
+ static void child_run(Child *child) {
+	child->args = parse_cmd(child->cmd);
 
-	if (!cmd)
-		return;
+	if (child->conv_cnt > 0)
+          dup2(child->fd_in, STDIN_FILENO);
 
-	static int pipefd[2] = {};
-	static int fd_in = 0;
-	if (pipe(pipefd) == -1) {
-        perror("pipe failed");
-        return;
-    }
-
-	static int conv_cnt = -1;
-	const char *new_cmd = strchr(cmd, '|');
-	if (new_cmd || conv_cnt > -1)
-		conv_cnt++;
-
-	const pid_t pid = fork();
-	char **args = NULL;
-
-	if (pid < 0) {
-		printf("fork failed!\n");
-		return;
+	if (child->new_cmd) {
+        dup2(child->pipefd[1], STDOUT_FILENO);
+        close(child->pipefd[0]);
 	}
 
-	if (pid) {
-		int status = 0;
-		waitpid(pid, &status, 0);
-
-		close(pipefd[1]);
-		if (conv_cnt > 0)
-			close(fd_in);
-		fd_in = pipefd[0];
-
-		if (args) {
-			free(args);
-			args = NULL;
-		}
-
-		int child_exit_code = WEXITSTATUS(status);
-		if (child_exit_code) printf("Child process exit code: %d\n", child_exit_code);
-
-		if (new_cmd)
-			run_cmd(new_cmd + 1);
-
-		fd_in = 0;
-		conv_cnt = -1;
-		return;
-	}
-
-	args = parse_cmd(cmd);
-
-	if (conv_cnt > 0)
-          dup2(fd_in, STDIN_FILENO);
-
-	if (new_cmd) {
-        dup2(pipefd[1], STDOUT_FILENO);
-        close(pipefd[0]);
-	}
-
-	if (args) execvp(args[0], args);
+	if (child->args) execvp(child->args[0], child->args);
 	printf("exec* failed\n");
+	return;
+ }
 
+static void parent_run(Parent *pnt) {
+	int status = 0;
+	waitpid(pnt->pid, &status, 0);
+
+	close(pnt->pipefd[1]);
+	if (*pnt->conv_cnt > 0)
+		close(*pnt->fd_in);
+	*pnt->fd_in = pnt->pipefd[0];
+
+	if (pnt->args) {
+		free(pnt->args);
+		pnt->args = NULL;
+	}
+
+	int child_exit_code = WEXITSTATUS(status);
+	if (child_exit_code) printf("Child process exit code: %d\n", child_exit_code);
+
+	if (pnt->new_cmd)
+		run_cmd(pnt->new_cmd + 1);
+
+	*pnt->fd_in = 0;
+	*pnt->conv_cnt = -1;
 	return;
 }
+
+ int strwords(const char *string) {
+
+	int words_count = 0;
+	const char *p = string;
+
+	while (isspace((*p))) p++;
+
+	for (; *p != '\0'; p++) {
+		if (words_count > 0 && *p == '|') {
+			if (isalpha(*(p - 1))) words_count++;
+			break;
+		}
+
+		if (isspace(*p)) {
+			words_count++;
+			while (isspace((*(p + 1)))) p++;
+		}
+	}
+
+	return words_count;
+ }
