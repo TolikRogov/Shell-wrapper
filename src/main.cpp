@@ -47,8 +47,10 @@ int main() {
 	while (isspace((*p))) p++;
 
 	for (; *p != '\0'; p++) {
-		if (words_count > 0 && *p == '|')
+		if (words_count > 0 && *p == '|') {
+			if (isalpha(*(p - 1))) words_count++;
 			break;
+		}
 
 		if (isspace(*p)) {
 			words_count++;
@@ -71,7 +73,7 @@ int main() {
 	}
 
 	size_t arg_index = 0;
-	char delim[] = " \t\n";
+	char delim[] = " |\t\n";
 
 	char cmd_copy[ARG_MAX] = {};
 	strcpy(cmd_copy, cmd);
@@ -121,8 +123,9 @@ int main() {
 			args = NULL;
 		}
 
-		printf("Child process exit code: %d\n", WEXITSTATUS(status));
-		
+		int child_exit_code = WEXITSTATUS(status);
+		if (child_exit_code) printf("Child process exit code: %d\n", child_exit_code);
+
 		if (new_cmd)
 			run_cmd(new_cmd + 1);
 
